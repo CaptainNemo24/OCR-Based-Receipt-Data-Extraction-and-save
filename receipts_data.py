@@ -56,7 +56,7 @@ for filename in os.listdir(image_file):
                 fields = response.json()['images'][0]['fields']
                 print(f"{json_data} 생성 완료")
         
-    # 응답 내용을 영수증 형태로 다시 변환
+    # 분석을 위해 영수증 형태로 다시 변환
     string_result = ''
     for i in fields:
         if i['lineBreak'] == True:
