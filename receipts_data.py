@@ -69,7 +69,7 @@ for filename in os.listdir(image_file):
 
     # OpenAI prompt 응답 생성
     client = OpenAI(
-    api_key="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"
+    api_key="YOUR_API_KEY"
     )
 
     completion = client.chat.completions.create(
@@ -90,7 +90,7 @@ for filename in os.listdir(image_file):
     store_name = data["업체명"]
 
     # 파일 경로 및 오픈할 sheet 이름
-    file_path = r"YOUR_FILE_FATH\csv\샘플 데이터.xlsx"
+    file_path = fr"YOUR_FILE_FATH\csv\샘플 데이터.xlsx"
     sheet_name = "지출내역"
 
     #데이터 프레임으로 전환 및 생성

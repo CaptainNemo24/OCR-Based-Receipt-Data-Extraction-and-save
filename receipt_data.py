@@ -65,7 +65,7 @@ print(string_result)
 
 # OpenAI prompt 응답 생성
 client = OpenAI(
-api_key="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"
+api_key="YOUR_API_KEY"
 )
 
 completion = client.chat.completions.create(
