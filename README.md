@@ -1,5 +1,3 @@
-
-
 🧐 프로젝트 목적
 - OCR(Optical Character Recognition) 기술을 활용하여 영수증 이미지에서 텍스트를 자동으로 추출
 - Python Pandas, openpyxl 라이브러리 등을 사용하여 필요한 필드를 추출 및 구조화된 데이터로 변환

@@ -3,15 +3,15 @@ import uuid
 import time
 import json
 import re
-from datetime import datetime
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string
+from openai import OpenAI
 
 # CLOVA OCR API 호출
 api_url = 'YOUR_API_URL'
 secret_key = 'YOUR_SECRET_KEY'
-file_name = "영수증1"
+file_name = "영수증9"
 # 이스케이프 문자 무시 + 포맷 가능성을 위해 fr를 통해 파일 경로 읽기
 image_file = fr"YOUR_FILE_FATH\jpg\{file_name}.jpg"
 
@@ -38,7 +38,7 @@ headers = {
 }
 
 response = requests.request("POST", api_url, headers=headers, data = payload, files = files)
-json_data = f"YOUR_FILE_FATH\{file_name}.json"
+json_data = fr"YOUR_FILE_FATH\json\{file_name}.json"
 
 # json 파일이 있을 경우에는 불러오고, 없을 경우에는 새로 생성
 try:
@@ -51,65 +51,67 @@ except FileNotFoundError:
         json.dump(response.json(), f, ensure_ascii=False, indent=2)
         fields = response.json()['images'][0]['fields']
         print(f"{file_name}.json 생성 완료")
-
-# 생성된 json 파일에서 text만 추출(이모티콘, 그림 등 제외)
-extract_text = [f['inferText'] for f in fields]
-
-# 영수증 패턴을 분석하여 품목 추출을 위한 정규 표현식
-def is_product_name(s):
-    return re.match(r'\*[\w가-힣]+', s)
-
-items = []
-store_name = None
-sales_date = None
-
-# 매장명 / 매출일 추출
-for w, text in enumerate(extract_text):
-    if text == "[매장명]" and w + 1 < len(extract_text):
-        store_name = extract_text[w + 1]
-    elif text == "[매출일]" and w + 1 < len(extract_text):
-        sale_date = extract_text[w + 1]
-        sales_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
-
-# 품목 정보 추출
-i = 0
-while i + 3 < len(extract_text):
-    if is_product_name(extract_text[i]):
-        product_name = extract_text[i]
-        unit_price = extract_text[i + 1]
-        quantity = extract_text[i + 2]
-        amount = extract_text[i + 3]
-
-        items.append({
-                "날짜": sales_date,
-                "업체명": store_name,
-                "품목": product_name,
-                "단가": unit_price,
-                "수량": quantity,
-                "금액": amount
-        })
-        i += 4
+        
+# 응답 내용을 영수증 형태로 다시 변환
+string_result = ''
+for i in fields:
+    if i['lineBreak'] == True:
+        linebreak = '\n'
     else:
-        i += 1
+        linebreak = ' '
+    string_result = string_result + i['inferText'] + linebreak
+    
+print(string_result)
 
-# "*부가세" 품목만 제거
-items = [item for item in items if item["품목"] != "*부가세"]
+# OpenAI prompt 응답 생성
+client = OpenAI(
+api_key="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"
+)
 
-# 결과 출력
-for item in items:
-    item["품목"] = item["품목"].replace("*", "")
-    for key in ["단가", "수량", "금액"]:
-        # 쉼표나 공백 등 제거하고 숫자로 변환
-        cleaned = item[key].replace(",", "")
-        item[key] = int(cleaned)
-    print(item)
+completion = client.chat.completions.create(
+model="gpt-3.5-turbo-1106",
+messages=[
+    {"role": "system", "content": "너는 영수증에서 날짜, 업체명, 품목, 단가, 수량, 금액을 찾아 분석하고 JSON 파일로 만들 수 있어. 모든 JSON 입력에서 상품 리스트 역할을 하는 키를 찾아서, 그걸 '상품목록'이라는 키로 변환한 JSON을 출력하지."},
+    {"role": "user", "content": f"{string_result}를 분석해서 날짜(시간 제외), 업체명, 품목, 단가, 수량, 금액만 추출해서 정리해줘. 모두 문자열이지. 만약 상품명이 숫자로만 되어있으면 그건 제외해줘. 그리고 매장명 -> 업체명, 매출일 -> 날짜로 변경해줘. 단가, 금액에 .은 ,로 인식해줘."}
+]
+)
+prompt = completion.choices[0].message.content
 
-#데이터 프레임으로 전환 및 생성
-receipt_data = pd.DataFrame(items)
+print(prompt)
+
+data = json.loads(prompt)
+
+# 날짜와 업체명 추출
+sales_date = data["날짜"]
+store_name = data["업체명"]
 
 # 파일 경로 및 오픈할 sheet 이름
 file_path = fr"YOUR_FILE_FATH\csv\샘플 데이터.xlsx"
 sheet_name = "지출내역"
+
+#데이터 프레임으로 전환 및 생성
+receipt_data = pd.DataFrame(data['상품목록'])
+
+# 날짜, 업체명을 컬럼으로 앞에 삽입
+receipt_data.insert(0, "날짜", sales_date)
+receipt_data.insert(1, "업체명", store_name)
+
+# 간혹 날짜 형식이 yy-mm-dd 되어 있는 경우가 있으므로 날짜 형식 변환: yy-mm-dd → yyyy-mm-dd
+def convert_yy_to_yyyy(date_str):
+    # 정규표현식: 정확히 yy-mm-dd 형식만 매칭
+    if re.fullmatch(r"\d{2}-\d{2}-\d{2}", date_str):
+        return pd.to_datetime(date_str, format="%y-%m-%d").strftime("%Y-%m-%d")
+    # 변환하지 않음
+    else:
+        return pd.to_datetime(date_str)
+
+receipt_data["날짜"] = receipt_data["날짜"].apply(convert_yy_to_yyyy)
+
+# 쉼표나 공백 등 제거하고 숫자로 변환
+columns_to_convert = ["단가", "수량", "금액"]
+
+for col in columns_to_convert:
+    receipt_data[col] = receipt_data[col].astype(str).str.replace(",", "").str.strip().fillna("0").astype(int)
 
 # 엑셀 열기
 wb = load_workbook(file_path)
@@ -147,4 +149,3 @@ new_ref = f"{start_col_letter}{start_row}:{end_col_letter}{new_end_row}"
 # 지정한 파일 경로에 저장 및 확인
 wb.save(file_path)
 print(f"{file_path} 파일에 저장되었습니다.")
-
